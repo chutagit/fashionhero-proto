@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePostHog } from "@posthog/react";
 
 const COLORS = {
   "Jet Black":"#111","Triple Black":"#0a0a0a","Washed Black":"#2d2d2d","Black":"#1a1a1a",
@@ -68,9 +69,20 @@ var AMBER_MID = "#B45309";
 
 function ProductCard({ p, showPromo }) {
   var [hov, setHov] = useState(false);
+  var posthog = usePostHog();
   var isPromo = showPromo && PROMO_HOME.indexOf(p.id) !== -1;
+  function handleClick() {
+    posthog?.capture('product_clicked', {
+      product_id: p.id,
+      product_name: p.name,
+      product_price: p.price,
+      seller: p.seller,
+      color: p.color,
+      is_promoted: isPromo,
+    });
+  }
   return (
-    <div onMouseEnter={function(){ setHov(true); }} onMouseLeave={function(){ setHov(false); }} style={{cursor:"pointer",position:"relative"}}>
+    <div onClick={handleClick} onMouseEnter={function(){ setHov(true); }} onMouseLeave={function(){ setHov(false); }} style={{cursor:"pointer",position:"relative"}}>
       <div style={{position:"relative",paddingBottom:"133%",overflow:"hidden",background:"#f5f5f5"}}>
         <div style={{position:"absolute",top:"0",left:"0",right:"0",bottom:"0",transform:hov?"scale(1.05)":"scale(1)",transition:"transform 0.35s ease"}}>
           <ProductThumb color={p.color} name={p.name} image={p.image} />
@@ -92,8 +104,19 @@ function ProductCard({ p, showPromo }) {
 
 function PromotedCard({ p }) {
   var [hov, setHov] = useState(false);
+  var posthog = usePostHog();
+  function handleClick() {
+    posthog?.capture('promoted_product_clicked', {
+      product_id: p.id,
+      product_name: p.name,
+      product_price: p.price,
+      seller: p.seller,
+      slot: p.slot,
+      fee_pln: p.fee,
+    });
+  }
   return (
-    <div onMouseEnter={function(){ setHov(true); }} onMouseLeave={function(){ setHov(false); }} style={{cursor:"pointer",position:"relative",border:"1.5px solid "+AMBER,background:"#fff"}}>
+    <div onClick={handleClick} onMouseEnter={function(){ setHov(true); }} onMouseLeave={function(){ setHov(false); }} style={{cursor:"pointer",position:"relative",border:"1.5px solid "+AMBER,background:"#fff"}}>
       <div style={{position:"relative",paddingBottom:"133%",overflow:"hidden",background:"#f5f5f5"}}>
         <div style={{position:"absolute",top:"0",left:"0",right:"0",bottom:"0",transform:hov?"scale(1.05)":"scale(1)",transition:"transform 0.35s ease"}}>
           <ProductThumb color={p.color} name={p.name} image={p.image} />
@@ -117,7 +140,18 @@ function PromotedCard({ p }) {
 
 function Navbar({ setPage, setQuery, page }) {
   var [q, setQ] = useState("");
-  function submit(e) { e.preventDefault(); setQuery(q || "buty"); setPage("search"); }
+  var posthog = usePostHog();
+  function submit(e) {
+    e.preventDefault();
+    var query = q || "buty";
+    posthog?.capture('search_performed', { query: query, source: 'navbar' });
+    setQuery(query);
+    setPage("search");
+  }
+  function goToSeller() {
+    posthog?.capture('seller_panel_viewed');
+    setPage("seller");
+  }
   return (
     <div>
       <div style={{background:"#000",color:"#fff",textAlign:"center",padding:"9px 16px",fontSize:"11px",letterSpacing:"0.04em"}}>
@@ -137,7 +171,7 @@ function Navbar({ setPage, setQuery, page }) {
             <input value={q} onChange={function(e){ setQ(e.target.value); }} placeholder="Szukaj..." style={{border:"1.5px solid #000",padding:"6px 10px",fontSize:"12px",width:"180px",outline:"none"}} />
             <button type="submit" style={{background:"#000",color:"#fff",border:"none",padding:"6px 12px",cursor:"pointer",fontSize:"12px"}}>OK</button>
           </form>
-          <span onClick={function(){ setPage("seller"); }} style={{fontSize:"11px",letterSpacing:"0.08em",cursor:"pointer",fontWeight:page==="seller"?"800":"400",borderBottom:page==="seller"?"2px solid #000":"2px solid transparent",paddingBottom:"2px"}}>PANEL SPRZEDAWCY</span>
+          <span onClick={goToSeller} style={{fontSize:"11px",letterSpacing:"0.08em",cursor:"pointer",fontWeight:page==="seller"?"800":"400",borderBottom:page==="seller"?"2px solid #000":"2px solid transparent",paddingBottom:"2px"}}>PANEL SPRZEDAWCY</span>
         </div>
       </div>
     </div>
@@ -164,6 +198,7 @@ function Tooltip({ text }) {
 
 function CampaignForm({ product, onSave, onCancel }) {
   var [rate, setRate] = useState(5);
+  var posthog = usePostHog();
   var cost = ((product.price * rate) / 100).toFixed(2);
 
   var EXAMPLE_MARGIN = 35;
@@ -253,7 +288,16 @@ function CampaignForm({ product, onSave, onCancel }) {
         </div>
 
         <div style={{display:"flex",gap:"8px"}}>
-          <button onClick={function(){ onSave({productId:product.id, rate, status:"active", sales:0, totalFees:0}); }}
+          <button onClick={function(){
+              posthog?.capture('campaign_started', {
+                product_id: product.id,
+                product_name: product.name,
+                product_price: product.price,
+                rate_percent: rate,
+                fee_per_sale: parseFloat(cost),
+              });
+              onSave({productId:product.id, rate, status:"active", sales:0, totalFees:0});
+            }}
             style={{flex:"1",background:"#000",color:"#fff",border:"none",padding:"11px",fontSize:"12px",fontWeight:"800",letterSpacing:"0.08em",cursor:"pointer"}}>
             URUCHOM KAMPANIĘ
           </button>
@@ -276,14 +320,27 @@ function SellerPage() {
   ]);
   var [formProduct, setFormProduct] = useState(null);
   var [simFlash, setSimFlash] = useState(null);
+  var posthog = usePostHog();
 
   function simulateSale(pid) {
+    var product = PRODUCTS.find(function(x){ return x.id === pid; });
+    var campaign = campaigns.find(function(c){ return c.productId === pid; });
+    if (product && campaign) {
+      var fee = parseFloat(((product.price * campaign.rate) / 100).toFixed(2));
+      posthog?.capture('sale_simulated', {
+        product_id: pid,
+        product_name: product.name,
+        product_price: product.price,
+        rate_percent: campaign.rate,
+        fee_pln: fee,
+      });
+    }
     setCampaigns(function(prev){
       return prev.map(function(c){
         if (c.productId !== pid) return c;
         var p = PRODUCTS.find(function(x){ return x.id === pid; });
-        var fee = parseFloat(((p.price * c.rate) / 100).toFixed(2));
-        return Object.assign({}, c, {sales: c.sales+1, totalFees: parseFloat((c.totalFees+fee).toFixed(2))});
+        var f = parseFloat(((p.price * c.rate) / 100).toFixed(2));
+        return Object.assign({}, c, {sales: c.sales+1, totalFees: parseFloat((c.totalFees+f).toFixed(2))});
       });
     });
     setSimFlash(pid);
@@ -294,6 +351,16 @@ function SellerPage() {
 
   function activeCampaignFor(pid) {
     return campaigns.find(function(c){ return c.productId === pid; }) || null;
+  }
+
+  function openCampaignForm(p) {
+    posthog?.capture('campaign_form_opened', {
+      product_id: p.id,
+      product_name: p.name,
+      product_price: p.price,
+      has_existing_campaign: activeCampaignFor(p.id) !== null,
+    });
+    setFormProduct(p);
   }
 
   function saveCampaign(data) {
@@ -310,6 +377,12 @@ function SellerPage() {
   }
 
   function toggleStatus(pid) {
+    var campaign = campaigns.find(function(c){ return c.productId === pid; });
+    var newStatus = campaign && campaign.status === "active" ? "paused" : "active";
+    posthog?.capture('campaign_status_toggled', {
+      product_id: pid,
+      new_status: newStatus,
+    });
     setCampaigns(function(prev){
       return prev.map(function(c){
         if (c.productId !== pid) return c;
@@ -319,6 +392,11 @@ function SellerPage() {
   }
 
   function removeCampaign(pid) {
+    var product = PRODUCTS.find(function(x){ return x.id === pid; });
+    posthog?.capture('campaign_removed', {
+      product_id: pid,
+      product_name: product ? product.name : undefined,
+    });
     setCampaigns(function(prev){ return prev.filter(function(c){ return c.productId !== pid; }); });
   }
 
@@ -384,13 +462,13 @@ function SellerPage() {
                     <div style={{color:"#aaa",fontSize:"11px",marginBottom:"6px"}}>{p.price} zł</div>
                     {camp ? (
                       <div style={{display:"flex",gap:"4px"}}>
-                        <button onClick={function(){ setFormProduct(p); }}
+                        <button onClick={function(){ openCampaignForm(p); }}
                           style={{flex:"1",background:"#fff",color:"#000",border:"1px solid #000",padding:"5px",fontSize:"10px",fontWeight:"700",letterSpacing:"0.06em",cursor:"pointer"}}>
                           EDYTUJ {camp.rate}%
                         </button>
                       </div>
                     ) : (
-                      <button onClick={function(){ setFormProduct(p); }}
+                      <button onClick={function(){ openCampaignForm(p); }}
                         style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"6px",fontSize:"10px",fontWeight:"700",letterSpacing:"0.06em",cursor:"pointer"}}>
                         + PROMUJ
                       </button>
@@ -415,7 +493,7 @@ function SellerPage() {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
               <thead>
                 <tr style={{borderBottom:"2px solid #000"}}>
-                  {["Produkt","Stawka","Status","Sprzedaże","Suma opłat","ROAS",""].map(function(h,i){ return (
+                  {["Produkt","Stawka","Status","Sprzedaże","Suma opłat","ROAS",""].map(function(h){ return (
                     <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:"800",fontSize:"10px",letterSpacing:"0.1em",textTransform:"uppercase",whiteSpace:"nowrap"}}>
                       {h}
                       {h==="ROAS" && <Tooltip text="Zwrot z reklamy: za każdą złotówkę opłaty reklamowej ile złotych przychodu wróciło. ROAS 3x = 3 zł przychodu na 1 zł opłaty." />}
@@ -489,6 +567,7 @@ function SellerPage() {
       )}
 
       {formProduct && <CampaignForm product={formProduct} onSave={saveCampaign} onCancel={function(){ setFormProduct(null); }} />}
+
     </div>
   );
 }
@@ -502,6 +581,7 @@ function ProductGrid({ products, showPromo }) {
 }
 
 function HomePage({ setPage, setQuery }) {
+  var posthog = usePostHog();
   var cols = [
     {t:"Nowosci",bg:"#111"},
     {t:"Dla Mezczyzn",bg:"#1e2a1a"},
@@ -516,15 +596,24 @@ function HomePage({ setPage, setQuery }) {
         <div style={{position:"absolute",bottom:"50px",left:"50px"}}>
           <div style={{fontSize:"11px",letterSpacing:"0.15em",textTransform:"uppercase",color:"rgba(255,255,255,0.6)",marginBottom:"10px"}}>ODKRYJ 4,000+ SPRZEDAWCOW</div>
           <div style={{fontSize:"46px",fontWeight:"900",color:"#fff",lineHeight:"1.05",marginBottom:"22px",letterSpacing:"-0.03em"}}>Twoj styl.<br />Ich rzemioslo.</div>
-          <button onClick={function(){ setQuery("buty damskie"); setPage("search"); }} style={{background:"#fff",color:"#000",border:"none",padding:"10px 20px",fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontWeight:"800",marginRight:"10px"}}>SKLEP DLA KOBIET</button>
-          <button onClick={function(){ setQuery("buty meskie"); setPage("search"); }} style={{background:"transparent",color:"#fff",border:"2px solid rgba(255,255,255,0.7)",padding:"10px 20px",fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontWeight:"700"}}>SKLEP DLA MEZCZYZN</button>
+          <button onClick={function(){
+              posthog?.capture('hero_cta_clicked', { cta_label: 'SKLEP DLA KOBIET', query: 'buty damskie' });
+              setQuery("buty damskie"); setPage("search");
+            }} style={{background:"#fff",color:"#000",border:"none",padding:"10px 20px",fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontWeight:"800",marginRight:"10px"}}>SKLEP DLA KOBIET</button>
+          <button onClick={function(){
+              posthog?.capture('hero_cta_clicked', { cta_label: 'SKLEP DLA MEZCZYZN', query: 'buty meskie' });
+              setQuery("buty meskie"); setPage("search");
+            }} style={{background:"transparent",color:"#fff",border:"2px solid rgba(255,255,255,0.7)",padding:"10px 20px",fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontWeight:"700"}}>SKLEP DLA MEZCZYZN</button>
         </div>
       </div>
 
       <div style={{padding:"28px 20px 0"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"2px"}}>
           {cols.map(function(c){ return (
-            <div key={c.t} onClick={function(){ setQuery(c.t); setPage("search"); }} style={{position:"relative",paddingBottom:"110%",overflow:"hidden",cursor:"pointer",background:c.bg}}>
+            <div key={c.t} onClick={function(){
+                posthog?.capture('category_browsed', { category: c.t });
+                setQuery(c.t); setPage("search");
+              }} style={{position:"relative",paddingBottom:"110%",overflow:"hidden",cursor:"pointer",background:c.bg}}>
               <div style={{position:"absolute",top:"0",left:"0",right:"0",bottom:"0",display:"flex",alignItems:"flex-end",padding:"14px"}}>
                 <div>
                   <div style={{color:"rgba(255,255,255,0.45)",fontSize:"9px",letterSpacing:"0.15em",marginBottom:"4px",textTransform:"uppercase"}}>Kolekcja</div>
@@ -600,8 +689,17 @@ function HomePage({ setPage, setQuery }) {
 function SearchPage({ query, setQuery }) {
   var [filter, setFilter] = useState("Wszystkie");
   var [q, setQ] = useState(query);
+  var posthog = usePostHog();
   var filters = ["Wszystkie","Damskie","Meskie","Buty","Odziez","Akcesoria","Sale"];
-  function submit(e) { e.preventDefault(); setQuery(q); }
+  function submit(e) {
+    e.preventDefault();
+    posthog?.capture('search_performed', { query: q, source: 'search_page' });
+    setQuery(q);
+  }
+  function applyFilter(f) {
+    posthog?.capture('search_filter_applied', { filter: f, query: query });
+    setFilter(f);
+  }
   return (
     <div>
       <div style={{padding:"18px 20px 0"}}>
@@ -619,7 +717,7 @@ function SearchPage({ query, setQuery }) {
 
       <div style={{display:"flex",gap:"6px",padding:"10px 20px",borderBottom:"1px solid #e5e5e5",overflowX:"auto"}}>
         {filters.map(function(f){ return (
-          <button key={f} onClick={function(){ setFilter(f); }} style={{border:"1px solid "+(filter===f?"#000":"#ccc"),background:filter===f?"#000":"#fff",color:filter===f?"#fff":"#000",padding:"5px 13px",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>{f}</button>
+          <button key={f} onClick={function(){ applyFilter(f); }} style={{border:"1px solid "+(filter===f?"#000":"#ccc"),background:filter===f?"#000":"#fff",color:filter===f?"#fff":"#000",padding:"5px 13px",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>{f}</button>
         ); })}
       </div>
 

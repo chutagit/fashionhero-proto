@@ -198,13 +198,13 @@ function Tooltip({ text }) {
 
 function CampaignForm({ product, onSave, onCancel }) {
   var [rate, setRate] = useState(5);
+  var [margin, setMargin] = useState(35);
   var posthog = usePostHog();
   var cost = ((product.price * rate) / 100).toFixed(2);
 
-  var EXAMPLE_MARGIN = 35;
-  var marginAmt = (product.price * EXAMPLE_MARGIN / 100).toFixed(2);
-  var breakEven = ((product.price * EXAMPLE_MARGIN / 100) / product.price * 100).toFixed(1);
-  var profitable = rate <= parseFloat(breakEven);
+  var marginAmt = (product.price * margin / 100).toFixed(2);
+  var breakEven = margin.toFixed(1);
+  var profitable = rate <= margin;
 
   return (
     <div style={{position:"fixed",top:"0",left:"0",right:"0",bottom:"0",background:"rgba(0,0,0,0.55)",zIndex:"200",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onCancel}>
@@ -213,8 +213,8 @@ function CampaignForm({ product, onSave, onCancel }) {
         <div style={{color:"#888",fontSize:"12px",marginBottom:"20px"}}>Model: pay-per-sale — płacisz tylko za faktyczną sprzedaż</div>
 
         {/* punkt 1: atrybucja — kiedy nalicza się opłata */}
-        <div style={{background:"#f0f7ff",border:"1px solid #bfdbfe",padding:"10px 12px",marginBottom:"20px",fontSize:"11px",lineHeight:"1.6",color:"#1e40af"}}>
-          <strong>Kiedy zapłacisz?</strong> Opłata nalicza się TYLKO gdy kupujący kliknie Twój promowany listing i sfinalizuje zakup w tej samej sesji. Samo kliknięcie bez zakupu = 0 zł.
+        <div style={{background:"#f0f7ff",border:"1px solid #bfdbfe",padding:"13px 15px",marginBottom:"20px",fontSize:"13px",lineHeight:"1.65",color:"#1e40af"}}>
+          <strong style={{fontSize:"14px"}}>Kiedy zapłacisz?</strong> Opłata nalicza się TYLKO gdy kupujący kliknie Twój promowany listing i sfinalizuje zakup w tej samej sesji. Samo kliknięcie bez zakupu = 0 zł.
         </div>
 
         <div style={{background:"#f5f5f5",padding:"12px",display:"flex",gap:"12px",alignItems:"center",marginBottom:"20px"}}>
@@ -271,7 +271,14 @@ function CampaignForm({ product, onSave, onCancel }) {
           <div style={{borderTop:"1px solid #e5e5e5",paddingTop:"10px"}}>
             <div style={{fontSize:"10px",color:"#aaa",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>
               Próg opłacalności
-              <Tooltip text="Zakładamy przykładową marżę 35% od ceny sprzedaży. Wpisz swoją marżę żeby zobaczyć realną opłacalność." />
+              <Tooltip text="Domyślnie 35% od ceny sprzedaży. Wpisz swoją marżę żeby zobaczyć realną opłacalność." />
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}}>
+              <label style={{fontSize:"11px",color:"#555"}}>Twoja marża</label>
+              <input type="number" min="1" max="90" value={margin}
+                onChange={function(e){ setMargin(parseFloat(e.target.value) || 0); }}
+                style={{width:"60px",border:"1px solid #ccc",padding:"4px 6px",fontSize:"12px",outline:"none"}} />
+              <span style={{fontSize:"12px",color:"#555"}}>% od ceny sprzedaży</span>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"6px"}}>
               <div style={{flex:"1",height:"6px",background:"#e5e5e5",borderRadius:"3px",overflow:"hidden"}}>
@@ -282,7 +289,7 @@ function CampaignForm({ product, onSave, onCancel }) {
               </span>
             </div>
             <div style={{fontSize:"11px",color:"#888"}}>
-              Przy marży 35% ({marginAmt} zł) stawka do <strong>{breakEven}%</strong> jest opłacalna. Twoja stawka: <strong>{rate}%</strong>.
+              Przy marży {margin}% ({marginAmt} zł) stawka do <strong>{breakEven}%</strong> jest opłacalna. Twoja stawka: <strong>{rate}%</strong>.
             </div>
           </div>
         </div>
